@@ -7,10 +7,12 @@ import {
   StyleSheet,
   Image,
   Alert,
+  TouchableOpacity, // New
 } from "react-native";
 import { supabase } from "../services/supabase";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
+import { useNavigation } from '@react-navigation/native'; // New
 
 type Tour = {
   id: string;
@@ -20,7 +22,7 @@ type Tour = {
   cover_image?: string;
   duration: number;
   price: number;
-  created_by: string; // Agregado para chequeo dueño
+  created_by: string;
 };
 
 type Props = {
@@ -31,6 +33,8 @@ export default function ToursScreen({ navigation }: Props) {
   const [tours, setTours] = useState<Tour[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const drawerNavigation = useNavigation<any>(); // For accessing parent drawer
 
   useEffect(() => {
     fetchCurrentUser();
@@ -85,7 +89,7 @@ export default function ToursScreen({ navigation }: Props) {
       Alert.alert("Error", "No se pudo eliminar el tour.");
     } else {
       Alert.alert("Éxito", "Tour eliminado.");
-      fetchTours(); // Refetch inmediato
+      fetchTours();
     }
   }
 
@@ -97,11 +101,12 @@ export default function ToursScreen({ navigation }: Props) {
       navigation.navigate("Login");
     }
   }
+
   return (
     <View style={{ flex: 1, padding: 10 }}>
       <Button
         title="Crear Tour"
-        onPress={() => navigation.navigate("TourForm")}
+        onPress={() => navigation.navigate("Tours")}
       />
       <Button title="Cerrar Sesión" onPress={handleLogout} color="red" />
 
@@ -153,6 +158,13 @@ export default function ToursScreen({ navigation }: Props) {
           </View>
         )}
       />
+      {/* New: Floating chat button */}
+      <TouchableOpacity
+        style={styles.chatButton}
+        onPress={() => drawerNavigation.getParent().openDrawer()}
+      >
+        <Text style={styles.chatButtonText}>💬</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -166,4 +178,25 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 16, fontWeight: "bold" },
   image: { width: "100%", height: 150, borderRadius: 8, marginBottom: 10 },
+  // New styles for button
+  chatButton: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    backgroundColor: '#007bff',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5, // Shadow for Android
+    shadowColor: '#000', // Shadow for iOS
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  chatButtonText: {
+    color: '#fff',
+    fontSize: 24,
+  },
 });
