@@ -9,6 +9,7 @@ import LoginScreen from "./src/screens/LoginScreen";
 import TourFormScreen from "./src/screens/TourFormScreen";
 import EditStopsScreen from "./src/screens/EditStopsScreen";
 import StopFormScreen from "./src/screens/StopFormScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -18,6 +19,7 @@ export type RootStackParamList = {
   TourForm: { tourId?: string }; // Para create/edit tour
   EditStops: { tourId: string };
   StopForm: { tourId: string; stopId?: string }; // Para create/edit stop
+  Profile: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -33,6 +35,11 @@ export default function App() {
         <Stack.Screen name="TourForm" component={TourFormScreen} />
         <Stack.Screen name="EditStops" component={EditStopsScreen} />
         <Stack.Screen name="StopForm" component={StopFormScreen} />
+        <Stack.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{ title: "Mi Perfil" }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

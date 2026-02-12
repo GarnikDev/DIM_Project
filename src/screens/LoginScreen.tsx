@@ -143,27 +143,28 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F0F4F8", // Un azul grisáceo muy suave (pastel)
+    backgroundColor: "#F2F9F7", // El verde menta pálido que usamos de fondo en los Tours
     justifyContent: "center",
     padding: 24,
   },
   card: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 30, // Super redondeado
+    borderRadius: 35, // Mantengo el super redondeado tipo "burbuja"
     padding: 32,
-    shadowColor: "#8899A6",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 8,
+    // Sombras más suaves y naturales
+    shadowColor: "#2D5A4C",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 6,
   },
   title: {
-    fontSize: 30,
-    fontWeight: "800",
-    color: "#2D3436",
+    fontSize: 32,
+    fontWeight: "900", // Peso máximo para coherencia con "Mis Aventuras"
+    color: "#2D5A4C", // El verde oscuro profundo de tus títulos
     marginBottom: 8,
     textAlign: "center",
-    letterSpacing: -0.5,
+    letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
@@ -174,48 +175,49 @@ const styles = StyleSheet.create({
   input: {
     width: "100%",
     height: 55,
-    backgroundColor: "#F7F9FC", // Input con fondo pastel
+    backgroundColor: "#F2F9F7", // Fondo ligeramente verdoso para el input
     borderWidth: 1,
-    borderColor: "#E1E8EE",
-    borderRadius: 25, // Bordes redondos para los inputs también
+    borderColor: "#E0F0E9", // Borde sutil
+    borderRadius: 18, // Bordes redondeados pero no píldora total para variar un poco del botón
     paddingHorizontal: 20,
     marginBottom: 16,
     fontSize: 16,
     color: "#2D3436",
   },
   button: {
-    backgroundColor: "#FF7675", // Pastel coral vibrante (color de aventura)
+    backgroundColor: "#5CC2A3", // El verde principal de "+ Crear Nuevo Tour"
     height: 55,
-    borderRadius: 27.5, // Totalmente redondeado (píldora)
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
-    // Sombra para que el botón "flote"
-    shadowColor: "#FF7675",
-    shadowOffset: { width: 0, height: 4 },
+    // Sombra en el mismo tono verde
+    shadowColor: "#5CC2A3",
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowRadius: 10,
+    elevation: 4,
   },
   buttonText: {
     color: "#fff",
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   registerContainer: {
     marginTop: 25,
     alignItems: "center",
   },
   registerText: {
-    color: "#74B9FF", // Azul pastel para los enlaces
-    fontWeight: "700",
+    color: "#E67E22", // El naranja/ámbar que usamos para el botón "Editar"
+    fontWeight: "800",
     fontSize: 15,
   },
   errorText: {
-    color: "#DC2626",
+    color: "#FF7675", // El rojo coral suave que usamos en "Eliminar"
     fontSize: 14,
     marginBottom: 16,
-    textAlign: "left",
-    fontWeight: "500",
+    textAlign: "center",
+    fontWeight: "600",
   },
 });

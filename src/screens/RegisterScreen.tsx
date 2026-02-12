@@ -52,69 +52,66 @@ export default function RegisterScreen() {
   // Hook de navegación
   const navigation = useNavigation<RegisterScreenNavigationProp>();
 
-  // Seleccionar imagen de la galería
+  // 1. Corregir el Picker para evitar el Warning
   const pickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        "Permiso requerido",
-        "Necesitamos acceso a tu galería para seleccionar una foto.",
-      );
+      Alert.alert("Permiso requerido", "Necesitamos acceso a tu galería.");
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      // CAMBIO: Usar el nuevo formato para evitar el WARN
+      mediaTypes: ["images"],
       allowsEditing: true,
-      aspect: [1, 1], // Cuadrado para avatar
-      quality: 0.8,
+      aspect: [1, 1],
+      quality: 0.5, // Bajamos un poco la calidad para que suba más rápido
       base64: true,
     });
 
     if (!result.canceled && result.assets && result.assets[0].base64) {
       setImageUri(result.assets[0].uri);
+      // IMPORTANTE: Llamamos a la subida
       await uploadProfileImage(result.assets[0]);
     }
   };
 
-  // Subir la imagen seleccionada a Supabase Storage
   const uploadProfileImage = async (asset: ImagePicker.ImagePickerAsset) => {
     try {
       setLoading(true);
 
-      const fileExt = asset.uri.split(".").pop() || "jpg";
+      const fileExt = asset.uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const filePath = fileName;
 
-      // Convertir base64 a ArrayBuffer
-      const base64 = asset.base64!;
-      const arrayBuffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      // --- EL TRUCO DEL BLOB (Más estable para redes) ---
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      // --------------------------------------------------
 
       const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, arrayBuffer, {
-          contentType: asset.mimeType || "image/jpeg",
+        .from("avatard")
+        .upload(filePath, blob, {
+          contentType: asset.mimeType || `image/${fileExt}`,
+          cacheControl: "3600",
           upsert: true,
         });
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      // Obtener URL pública (asumiendo bucket público)
       const { data: urlData } = supabase.storage
-        .from("avatars")
+        .from("avatard")
         .getPublicUrl(filePath);
 
       setProfileImageUrl(urlData.publicUrl);
-      Alert.alert("Éxito", "Foto de perfil subida correctamente");
+      Alert.alert("¡Éxito!", "Imagen cargada correctamente.");
     } catch (err: any) {
-      console.error("Error al subir imagen:", err);
+      console.error("Error detallado:", err);
+      // Si el error persiste, revisa que el bucket sea público en Supabase
       Alert.alert(
-        "Error al subir foto",
-        err.message || "No se pudo subir la imagen",
+        "Error de red",
+        "La subida tardó demasiado o falló. Intenta con una foto más pequeña.",
       );
-      setImageUri(null); // Quitamos preview si falla
     } finally {
       setLoading(false);
     }

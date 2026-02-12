@@ -1,142 +1,158 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
+import MapView, { Marker } from "react-native-maps";
 import { supabase } from "../services/supabase";
-import { RouteProp } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
 
-type Props = {
-  route: RouteProp<RootStackParamList, "StopForm">;
-  navigation: NativeStackNavigationProp<RootStackParamList, "StopForm">;
-};
-
-export default function StopFormScreen({ route, navigation }: Props) {
-  const { tourId, stopId } = route.params;
-  const isEdit = !!stopId;
-
+export default function StopFormScreen({ route, navigation }: any) {
+  const { tourId } = route.params;
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
-  const [stopOrder, setStopOrder] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [desc, setDesc] = useState("");
+  const [coord, setCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [order, setOrder] = useState("1");
 
-  useEffect(() => {
-    if (isEdit) fetchStop();
-  }, []);
+  const saveStop = async () => {
+    if (!title || !coord)
+      return Alert.alert(
+        "¡Atención!",
+        "Debes poner un título y marcar la ubicación en el mapa.",
+      );
 
-  async function fetchStop() {
-    const { data, error } = await supabase
-      .from("stops")
-      .select("*")
-      .eq("id", stopId)
-      .single();
-    if (error) {
-      Alert.alert("Error", "No se pudo cargar la parada.");
-      return;
+    const { error } = await supabase.from("stops").insert([
+      {
+        tour_id: tourId,
+        title,
+        description: desc,
+        latitude: coord.lat,
+        longitude: coord.lng,
+        stop_order: parseInt(order),
+      },
+    ]);
+
+    if (!error) {
+      Alert.alert("Éxito", "Parada añadida correctamente");
+      navigation.goBack();
     }
-    if (data) {
-      setTitle(data.title);
-      setDescription(data.description || "");
-      setLatitude(data.latitude.toString());
-      setLongitude(data.longitude.toString());
-      setStopOrder(data.stop_order.toString());
-    }
-  }
-
-  async function saveStop() {
-    if (!title || !latitude || !longitude || !stopOrder) {
-      Alert.alert("Error", "Completa todos los campos requeridos.");
-      return;
-    }
-
-    setLoading(true);
-    const updates = {
-      title,
-      description,
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
-      stop_order: parseInt(stopOrder),
-      tour_id: tourId,
-    };
-
-    let error;
-    if (isEdit) {
-      ({ error } = await supabase
-        .from("stops")
-        .update(updates)
-        .eq("id", stopId));
-    } else {
-      ({ error } = await supabase.from("stops").insert(updates));
-    }
-
-    setLoading(false);
-    if (error) {
-      Alert.alert("Error", error.message);
-    } else {
-      Alert.alert("Éxito", isEdit ? "Parada actualizada." : "Parada creada.");
-      navigation.goBack(); // Vuelve a EditStops, refetch se hace allá
-    }
-  }
+  };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>
-        {isEdit ? "Editar Parada" : "Crear Parada"}
-      </Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 50 }}
+      >
+        <Text style={styles.mainTitle}>Nueva Parada</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Título"
-        value={title}
-        onChangeText={setTitle}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Descripción"
-        value={description}
-        onChangeText={setDescription}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Latitud"
-        value={latitude}
-        onChangeText={setLatitude}
-        keyboardType="numeric"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Longitud"
-        value={longitude}
-        onChangeText={setLongitude}
-        keyboardType="numeric"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Orden (número)"
-        value={stopOrder}
-        onChangeText={setStopOrder}
-        keyboardType="numeric"
-      />
+        <Text style={styles.label}>Nombre del Monumento</Text>
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Ej: Torre del Oro"
+          placeholderTextColor="#A0A0A0"
+        />
 
-      <Button
-        title={loading ? "Guardando..." : "Guardar"}
-        onPress={saveStop}
-        disabled={loading}
-      />
-    </View>
+        <Text style={styles.label}>Historia para la Audioguía</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          multiline
+          value={desc}
+          onChangeText={setDesc}
+          placeholder="Escribe aquí lo que la voz leerá..."
+        />
+
+        <Text style={styles.label}>Ubicación (Toca el mapa)</Text>
+        <View style={styles.mapWrapper}>
+          <MapView
+            style={styles.miniMap}
+            initialRegion={{
+              latitude: 37.3891,
+              longitude: -5.9845,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }}
+            onPress={(e) =>
+              setCoord({
+                lat: e.nativeEvent.coordinate.latitude,
+                lng: e.nativeEvent.coordinate.longitude,
+              })
+            }
+          >
+            {coord && (
+              <Marker
+                coordinate={{ latitude: coord.lat, longitude: coord.lng }}
+                pinColor="#5CC2A3"
+              />
+            )}
+          </MapView>
+        </View>
+
+        <TouchableOpacity style={styles.saveBtn} onPress={saveStop}>
+          <Text style={styles.saveBtnText}>GUARDAR PARADA</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
-  title: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
+  container: { flex: 1, backgroundColor: "#F2F9F7", padding: 25 },
+  mainTitle: {
+    fontSize: 26,
+    fontWeight: "900",
+    color: "#2D5A4C",
+    marginBottom: 20,
+    marginTop: 40,
+  },
+  label: {
+    fontWeight: "700",
+    color: "#5C9484",
+    marginBottom: 8,
+    fontSize: 14,
+    textTransform: "uppercase",
+  },
   input: {
-    height: 40,
-    borderColor: "#ccc",
+    backgroundColor: "white",
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 20,
+    fontSize: 16,
+    color: "#2D3436",
     borderWidth: 1,
-    borderRadius: 5,
-    paddingHorizontal: 10,
-    marginBottom: 15,
+    borderColor: "#E0EDE9",
+  },
+  textArea: { height: 120, textAlignVertical: "top" },
+  mapWrapper: {
+    borderRadius: 25,
+    overflow: "hidden",
+    marginBottom: 30,
+    borderWidth: 3,
+    borderColor: "white",
+    elevation: 5,
+  },
+  miniMap: { width: "100%", height: 220 },
+  saveBtn: {
+    backgroundColor: "#2D5A4C",
+    padding: 18,
+    borderRadius: 20,
+    alignItems: "center",
+  },
+  saveBtnText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+    letterSpacing: 1.2,
   },
 });

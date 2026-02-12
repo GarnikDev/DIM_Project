@@ -1,169 +1,271 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import {
   View,
   Text,
   FlatList,
-  Button,
   StyleSheet,
   Image,
   Alert,
+  TouchableOpacity,
+  ActivityIndicator,
+  StatusBar,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../services/supabase";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../../App";
 
-type Tour = {
-  id: string;
-  title: string;
-  city: string;
-  language: string;
-  cover_image?: string;
-  duration: number;
-  price: number;
-  created_by: string; // Agregado para chequeo dueño
-};
-
-type Props = {
-  navigation: NativeStackNavigationProp<RootStackParamList, "Tours">;
-};
-
-export default function ToursScreen({ navigation }: Props) {
-  const [tours, setTours] = useState<Tour[]>([]);
+export default function ToursScreen({ navigation }: any) {
+  const [tours, setTours] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchCurrentUser();
-    fetchTours();
-  }, []);
-
-  async function fetchCurrentUser() {
-    try {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-
-      if (error) {
-        console.error("Error al obtener usuario:", error);
-        Alert.alert("Atención", "No se pudo verificar tu sesión.");
-        setCurrentUserId(null);
-        return;
-      }
-
-      setCurrentUserId(user?.id ?? null);
-    } catch (err) {
-      console.error("Excepción al obtener usuario:", err);
-      setCurrentUserId(null);
-    }
-  }
+  useFocusEffect(
+    useCallback(() => {
+      const init = async () => {
+        // Obtenemos el usuario actual
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        // Corregimos el error de TypeScript: user?.id ?? null
+        setCurrentUserId(user?.id ?? null);
+        fetchTours();
+      };
+      init();
+    }, []),
+  );
 
   async function fetchTours() {
     setLoading(true);
     const { data, error } = await supabase
       .from("tours")
-      .select(
-        "id, title, description, city, language, cover_image, duration, price, created_by",
-      );
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
-      Alert.alert("Error", "No se pudieron cargar los tours: " + error.message);
+      Alert.alert("Error", "No se pudieron cargar los tours");
     } else if (data) {
       setTours(data);
     }
     setLoading(false);
   }
 
-  async function deleteTour(tourId: string, createdBy: string) {
-    if (createdBy !== currentUserId) {
-      Alert.alert("Error", "No eres el dueño de este tour.");
-      return;
+  // FUNCIÓN DE LOGOUT CORREGIDA
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        Alert.alert("Error al cerrar sesión", error.message);
+      } else {
+        // Forzamos el salto a la pantalla de Login y limpiamos el historial
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Login" }], // <--- VERIFICA QUE TU PANTALLA SE LLAME "Login"
+        });
+      }
+    } catch (e) {
+      console.error(e);
     }
+  };
 
-    const { error } = await supabase.from("tours").delete().eq("id", tourId);
-    if (error) {
-      Alert.alert("Error", "No se pudo eliminar el tour.");
-    } else {
-      Alert.alert("Éxito", "Tour eliminado.");
-      fetchTours(); // Refetch inmediato
-    }
-  }
-
-  async function handleLogout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert("Error", "No se pudo cerrar sesión.");
-    } else {
-      navigation.navigate("Login");
-    }
-  }
   return (
-    <View style={{ flex: 1, padding: 10 }}>
-      <Button
-        title="Crear Tour"
-        onPress={() => navigation.navigate("TourForm")}
-      />
-      <Button title="Cerrar Sesión" onPress={handleLogout} color="red" />
+    <View style={styles.mainContainer}>
+      <StatusBar barStyle="dark-content" />
 
-      <FlatList
-        data={tours}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            {item.cover_image && (
-              <Image source={{ uri: item.cover_image }} style={styles.image} />
-            )}
-            <Text style={styles.title}>{item.title}</Text>
-            <Text>
-              {item.city} - {item.language}
-            </Text>
-            <Text>Duración: {item.duration} min</Text>
-            <Text>Precio: {item.price} €</Text>
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <Text style={styles.headerTitle}>Mis Aventuras</Text>
+          {/* ICONO DE PERFIL */}
+          <TouchableOpacity
+            style={styles.profileBtn}
+            onPress={() => navigation.navigate("Profile")}
+          >
+            <Ionicons name="person-outline" size={22} color="#2D5A4C" />
+          </TouchableOpacity>
 
-            <Button
-              title="Ver Mapa"
-              onPress={() =>
-                navigation.navigate("MapaDetallado", {
-                  tourId: item.id,
-                  tourTitle: item.title,
-                })
-              }
-            />
-            {item.created_by === currentUserId && (
-              <>
-                <Button
-                  title="Editar Tour"
-                  onPress={() =>
-                    navigation.navigate("TourForm", { tourId: item.id })
-                  }
-                />
-                <Button
-                  title="Gestionar Paradas"
-                  onPress={() =>
-                    navigation.navigate("EditStops", { tourId: item.id })
-                  }
-                />
-                <Button
-                  title="Eliminar"
-                  onPress={() => deleteTour(item.id, item.created_by)}
-                  color="red"
-                />
-              </>
-            )}
-          </View>
-        )}
-      />
+          {/* ICONO DE LOGOUT */}
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={22} color="#FF7675" />
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => navigation.navigate("TourForm")}
+        >
+          <Text style={styles.buttonText}>+ Nuevo Tour</Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#5CC2A3" style={{ flex: 1 }} />
+      ) : (
+        <FlatList
+          data={tours}
+          contentContainerStyle={{ padding: 20 }}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => {
+            const isOwner = item.created_by === currentUserId;
+
+            return (
+              <View style={styles.card}>
+                {/* Renderizado de imagen simple */}
+                {item.cover_image && (
+                  <Image
+                    source={{ uri: item.cover_image }}
+                    style={styles.image}
+                  />
+                )}
+
+                <View style={styles.priceBadge}>
+                  <Text style={styles.priceText}>{item.price}€</Text>
+                </View>
+
+                <View style={styles.infoContainer}>
+                  <Text style={styles.tourTitle}>{item.title}</Text>
+                  <Text style={styles.locationText}>
+                    {item.city} · {item.duration} min
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.viewMapBtn}
+                    onPress={() =>
+                      navigation.navigate("MapaDetallado", {
+                        tourId: item.id,
+                        tourTitle: item.title,
+                      })
+                    }
+                  >
+                    <Text style={styles.viewMapBtnText}>
+                      ABRIR MAPA Y AUDIO
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Lógica de botones de gestión */}
+                  {isOwner && (
+                    <View style={styles.ownerActionsRow}>
+                      <TouchableOpacity
+                        style={styles.addStopBtn}
+                        onPress={() =>
+                          navigation.navigate("EditStops", { tourId: item.id })
+                        }
+                      >
+                        <Text style={styles.addStopBtnText}>
+                          Gestionar Paradas
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.editBtn}
+                        onPress={() =>
+                          navigation.navigate("TourForm", { tourId: item.id })
+                        }
+                      >
+                        <Text style={styles.editBtnText}>Editar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              </View>
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginBottom: 15,
-    padding: 10,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
+  mainContainer: { flex: 1, backgroundColor: "#F2F9F7" },
+  header: {
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    backgroundColor: "#FFF",
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    elevation: 5,
   },
-  title: { fontSize: 16, fontWeight: "bold" },
-  image: { width: "100%", height: 150, borderRadius: 8, marginBottom: 10 },
+  headerTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  headerTitle: { fontSize: 24, fontWeight: "900", color: "#2D5A4C" },
+  logoutBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    backgroundColor: "#FFF0F0",
+    borderRadius: 10,
+  },
+  logoutText: { color: "#FF7675", fontWeight: "bold" },
+  createButton: {
+    backgroundColor: "#5CC2A3",
+    padding: 12,
+    borderRadius: 15,
+    alignItems: "center",
+  },
+  buttonText: { color: "#fff", fontWeight: "bold" },
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 25,
+    marginBottom: 20,
+    overflow: "hidden",
+    elevation: 4,
+  },
+  image: { width: "100%", height: 180, backgroundColor: "#DDD" },
+  priceBadge: {
+    position: "absolute",
+    top: 15,
+    right: 15,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    padding: 8,
+    borderRadius: 12,
+  },
+  profileBtn: {
+    width: 40,
+    height: 40,
+    backgroundColor: "#F2F9F7",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E0F0E9",
+  },
+  priceText: { color: "#2D5A4C", fontWeight: "800" },
+  infoContainer: { padding: 15 },
+  tourTitle: { fontSize: 18, fontWeight: "800", color: "#2D3436" },
+  locationText: { color: "#636E72", marginVertical: 5 },
+  viewMapBtn: {
+    backgroundColor: "#2D5A4C",
+    padding: 12,
+    borderRadius: 15,
+    alignItems: "center",
+    marginVertical: 10,
+  },
+  viewMapBtnText: { color: "white", fontWeight: "bold" },
+  ownerActionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#EEE",
+  },
+  addStopBtn: {
+    backgroundColor: "#F2F9F7",
+    padding: 10,
+    borderRadius: 10,
+    flex: 1,
+    marginRight: 5,
+    alignItems: "center",
+  },
+  addStopBtnText: { color: "#5CC2A3", fontWeight: "bold" },
+  editBtn: {
+    backgroundColor: "#FFF9F2",
+    padding: 10,
+    borderRadius: 10,
+    width: 80,
+    alignItems: "center",
+  },
+  editBtnText: { color: "#E67E22", fontWeight: "bold" },
 });
