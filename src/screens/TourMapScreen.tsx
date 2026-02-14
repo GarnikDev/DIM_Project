@@ -1,47 +1,59 @@
-import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Text, Alert, Button } from "react-native";
-import MapView, { Marker, Polyline, Region } from "react-native-maps";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  StatusBar,
+  ScrollView,
+  Platform,
+  Alert,
+} from "react-native";
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE, Region } from "react-native-maps";
+import * as Speech from "expo-speech";
 import { supabase } from "../services/supabase";
 import { RouteProp } from "@react-navigation/native";
 import { RootStackParamList } from "../../App";
-import * as Speech from "expo-speech";
 
 type Stop = {
   id: string;
   title: string;
+  description?: string;
   latitude: number;
   longitude: number;
-  description?: string;
-  stop_order?: number;
+  stop_order: number;
 };
 
 type TourMapProps = {
   route: RouteProp<RootStackParamList, "MapaDetallado">;
 };
 
-const SEVILLA_CENTER: Region = {
-  latitude: 37.3891,
-  longitude: -5.9845,
-  latitudeDelta: 0.02,
-  longitudeDelta: 0.02,
-};
-
 export default function TourMapScreen({ route }: TourMapProps) {
   const { tourId, tourTitle } = route.params;
+  const mapRef = useRef<MapView>(null);
 
   const [stops, setStops] = useState<Stop[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedDescription, setSelectedDescription] = useState<string | null>(
-    null,
-  ); // Para lectura
-  const [isSpeaking, setIsSpeaking] = useState(false); // Estado para controles
-  const [isPaused, setIsPaused] = useState(false); // Para pause/resume
+  const [loading, setLoading] = useState(true);
+
+  const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
+  const [sentences, setSentences] = useState<string[]>([]);
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  const isPausedRef = useRef(false);
+  const currentIdxRef = useRef(0);
 
   useEffect(() => {
     fetchStops();
+    return () => {
+      Speech.stop();
+    };
   }, [tourId]);
 
-  async function fetchStops() {
+  const fetchStops = useCallback(async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from("stops")
       .select("id, title, description, latitude, longitude, stop_order")
@@ -50,164 +62,321 @@ export default function TourMapScreen({ route }: TourMapProps) {
 
     if (error) {
       Alert.alert("Error", "No se pudieron cargar las paradas");
+      setLoading(false);
       return;
     }
 
     if (data) {
-      const parsed = data.map((stop: any) => ({
-        id: stop.id,
-        title: stop.title,
-        description: stop.description,
-        stop_order: stop.stop_order,
-        latitude: Number(stop.latitude),
-        longitude: Number(stop.longitude),
-      }));
-      setStops(parsed);
-    }
-  }
+      const parsed = data.map((s: any) => ({
+        id: s.id,
+        title: s.title,
+        description: s.description || "",
+        latitude: Number(s.latitude),
+        longitude: Number(s.longitude),
+        stop_order: Number(s.stop_order) || 0,
+      })).filter(s => !isNaN(s.latitude) && !isNaN(s.longitude));
 
-  // Función para hablar (extendida para descripción)
-  const speakDescription = (text: string) => {
-    if (isSpeaking) {
-      Speech.stop(); // Detener si ya está hablando
+      setStops(parsed);
+
+      // Ajuste automático del mapa
+      if (parsed.length > 0 && mapRef.current) {
+        const coords = parsed.map(s => ({
+          latitude: s.latitude,
+          longitude: s.longitude,
+        }));
+        setTimeout(() => {
+          mapRef.current?.fitToCoordinates(coords, {
+            edgePadding: { top: 80, right: 80, bottom: 300, left: 80 },
+            animated: true,
+          });
+        }, 800);
+      }
     }
-    Speech.speak(text, {
+    setLoading(false);
+  }, [tourId]);
+
+  const playFrom = useCallback((array: string[], index: number) => {
+    if (index >= array.length || isPausedRef.current) {
+      if (index >= array.length) setIsSpeaking(false);
+      return;
+    }
+
+    setCurrentIdx(index);
+    currentIdxRef.current = index;
+
+    Speech.speak(array[index], {
       language: "es-ES",
       pitch: 1.0,
-      rate: 0.9, // Ligeramente más lento para claridad
-      onStart: () => setIsSpeaking(true),
+      rate: 0.92,
       onDone: () => {
-        setIsSpeaking(false);
-        setIsPaused(false);
+        if (!isPausedRef.current) playFrom(array, index + 1);
       },
-      onStopped: () => {
+      onError: () => {
+        Alert.alert("Error", "Problema al reproducir el audio");
         setIsSpeaking(false);
-        setIsPaused(false);
       },
-      onError: () => Alert.alert("Error", "No se pudo reproducir la voz"),
+    });
+  }, []);
+
+  const handleSelectStop = (stop: Stop) => {
+    Speech.stop();
+    setSelectedStop(stop);
+
+    const fullText = stop.description?.trim() || "Sin descripción disponible.";
+    const chunks = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+
+    setSentences(chunks);
+    setCurrentIdx(0);
+    currentIdxRef.current = 0;
+    setIsSpeaking(true);
+    setIsPaused(false);
+    isPausedRef.current = false;
+
+    // Leer título primero + descripción
+    Speech.speak(`${stop.title}. `, {
+      language: "es-ES",
+      onDone: () => playFrom(chunks, 0),
     });
   };
 
-  // Controles de voz
-  const handlePlay = () => {
-    if (selectedDescription) {
-      if (isPaused) {
-        Speech.resume();
-        setIsPaused(false);
-      } else {
-        speakDescription(selectedDescription);
-      }
+  const togglePlayback = () => {
+    if (isPaused) {
+      setIsPaused(false);
+      isPausedRef.current = false;
+      playFrom(sentences, currentIdxRef.current);
     } else {
-      Alert.alert(
-        "Selecciona una parada",
-        "Elige un marcador para leer su descripción",
-      );
-    }
-  };
-
-  const handlePause = () => {
-    if (isSpeaking) {
-      Speech.pause();
       setIsPaused(true);
+      isPausedRef.current = true;
+      Speech.pause();
     }
   };
 
-  const handleStop = () => {
+  const stopPlayback = () => {
     Speech.stop();
     setIsSpeaking(false);
     setIsPaused(false);
+    setSelectedStop(null);
+    setSentences([]);
+    setCurrentIdx(0);
   };
+
+  const initialRegion: Region = {
+    latitude: 37.3891,
+    longitude: -5.9845,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#5CC2A3" />
+      </View>
+    );
+  }
 
   if (stops.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>No hay paradas para este tour</Text>
+        <Text style={styles.emptyText}>No hay paradas en este tour</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>{tourTitle}</Text>
+      <StatusBar barStyle="dark-content" />
 
-      <MapView style={styles.map} initialRegion={SEVILLA_CENTER}>
+      <Text style={styles.title}>{tourTitle || "Tour Map"}</Text>
+
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+        initialRegion={initialRegion}
+      >
+        <Polyline
+          coordinates={stops.map(s => ({ latitude: s.latitude, longitude: s.longitude }))}
+          strokeColor="#5CC2A3"
+          strokeWidth={4}
+          lineCap="round"
+          lineJoin="round"
+        />
+
         {stops.map((stop) => (
           <Marker
             key={stop.id}
             coordinate={{ latitude: stop.latitude, longitude: stop.longitude }}
-            title={stop.title}
-            description={stop.description}
-            onPress={() => {
-              setSelectedId(stop.id);
-              setSelectedDescription(
-                stop.description || "No hay descripción disponible",
-              );
-              speakDescription(stop.title); // Lee título primero (como antes)
-            }}
-            pinColor={stop.id === selectedId ? "blue" : "red"} // Indicador visual
-          />
+            onPress={() => handleSelectStop(stop)}
+          >
+            <View
+              style={[
+                styles.marker,
+                selectedStop?.id === stop.id && styles.markerActive,
+              ]}
+            >
+              <Text style={styles.markerText}>{stop.stop_order}</Text>
+            </View>
+          </Marker>
         ))}
-
-        <Polyline
-          coordinates={stops.map((s) => ({
-            latitude: s.latitude,
-            longitude: s.longitude,
-          }))}
-          strokeColor="blue"
-          strokeWidth={3}
-        />
       </MapView>
 
-      {/* Indicador visual de la parada actual */}
-      {selectedId && (
-        <View style={styles.indicatorContainer}>
-          <Text style={styles.indicatorText}>
-            Reproduciendo:{" "}
-            {stops.find((s) => s.id === selectedId)?.title || "Ninguna"}
-            {isSpeaking && " 🔊 (en reproducción)"}
-          </Text>
+      {selectedStop && (
+        <View style={styles.audioPanel}>
+          <Text style={styles.audioTitle}>{selectedStop.title}</Text>
+
+          <ScrollView
+            style={styles.historyScroll}
+            contentContainerStyle={{ paddingBottom: 10 }}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.historyText}>
+              {sentences.map((sentence, idx) => (
+                <Text
+                  key={idx}
+                  style={[
+                    styles.sentenceBase,
+                    idx === currentIdx && isSpeaking && !isPaused
+                      ? styles.sentenceActive
+                      : styles.sentenceInactive,
+                  ]}
+                >
+                  {sentence.trim()}{" "}
+                </Text>
+              ))}
+            </Text>
+          </ScrollView>
+
+          <View style={styles.controls}>
+            <TouchableOpacity style={styles.stopBtn} onPress={stopPlayback}>
+              <Text style={styles.controlIcon}>⏹</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.playBtn} onPress={togglePlayback}>
+              <Text style={styles.playText}>
+                {isPaused ? "REANUDAR" : isSpeaking ? "PAUSAR" : "REPRODUCIR"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
-
-      {/* Controles de voz */}
-      <View style={styles.controlsContainer}>
-        <Button
-          title={isPaused ? "Reanudar" : "Play"}
-          onPress={handlePlay}
-          disabled={!selectedDescription}
-        />
-        <Button
-          title="Pause"
-          onPress={handlePause}
-          disabled={!isSpeaking || isPaused}
-        />
-        <Button
-          title="Stop"
-          onPress={handleStop}
-          disabled={!isSpeaking}
-          color="red"
-        />
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  title: { fontSize: 18, fontWeight: "bold", margin: 10, textAlign: "center" },
-  map: { flex: 1 },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-  indicatorContainer: {
-    padding: 10,
-    backgroundColor: "#f0f0f0",
-    borderTopWidth: 1,
-    borderColor: "#ddd",
+  container: { flex: 1, backgroundColor: "#F2F9F7" },
+  title: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#2D5A4C",
+    textAlign: "center",
+    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
   },
-  indicatorText: { fontSize: 14, color: "#333" },
-  controlsContainer: {
+  map: { flex: 1 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F2F9F7",
+  },
+  emptyText: {
+    fontSize: 18,
+    color: "#636E72",
+    textAlign: "center",
+  },
+  marker: {
+    backgroundColor: "#5CC2A3",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    elevation: 6,
+  },
+  markerActive: {
+    backgroundColor: "#2D5A4C",
+    transform: [{ scale: 1.25 }],
+  },
+  markerText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  audioPanel: {
+    position: "absolute",
+    bottom: 20,
+    left: 16,
+    right: 16,
+    maxHeight: "45%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 30,
+    padding: 20,
+    elevation: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+  },
+  audioTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#2D5A4C",
+    marginBottom: 12,
+  },
+  historyScroll: {
+    maxHeight: 160,
+    marginBottom: 16,
+  },
+  historyText: {
+    lineHeight: 24,
+    fontSize: 15,
+  },
+  sentenceBase: { color: "#A0A0A0" },
+  sentenceActive: {
+    color: "#2D3436",
+    fontWeight: "700",
+    backgroundColor: "#F0F9F6",
+  },
+  sentenceInactive: { color: "#636E72" },
+  controls: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    padding: 10,
-    backgroundColor: "#fff",
+    alignItems: "center",
+    gap: 12,
+  },
+  stopBtn: {
+    backgroundColor: "#F2F9F7",
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 3,
+  },
+  playBtn: {
+    flex: 1,
+    backgroundColor: "#2D5A4C",
+    height: 60,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    elevation: 4,
+  },
+  playText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 16,
+    letterSpacing: 0.8,
+  },
+  controlIcon: {
+    fontSize: 28,
+    color: "#2D5A4C",
   },
 });

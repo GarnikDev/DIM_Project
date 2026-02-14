@@ -9,7 +9,8 @@ import LoginScreen from './src/screens/LoginScreen';
 import TourFormScreen from './src/screens/TourFormScreen';
 import EditStopsScreen from './src/screens/EditStopsScreen';
 import StopFormScreen from './src/screens/StopFormScreen';
-import ChatDrawer from './src/components/ChatDrawer'; // New import
+import ProfileScreen from './src/screens/ProfileScreen';
+import ChatDrawer from './src/components/ChatDrawer';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -19,6 +20,7 @@ export type RootStackParamList = {
   TourForm: { tourId?: string };
   EditStops: { tourId: string };
   StopForm: { tourId: string; stopId?: string };
+  Profile: undefined;           // ← AÑADE ESTA LÍNEA
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,6 +36,7 @@ function MainStack() {
       <Stack.Screen name="TourForm" component={TourFormScreen} />
       <Stack.Screen name="EditStops" component={EditStopsScreen} />
       <Stack.Screen name="StopForm" component={StopFormScreen} />
+      <Stack.Screen name="Profile" component={ProfileScreen} />
     </Stack.Navigator>
   );
 }

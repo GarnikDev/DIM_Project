@@ -1,43 +1,32 @@
-// Importaciones de componentes de React Native
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  Button,
+
   Alert,
   Image,
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
-import { useState } from "react";
+
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-
-// Para selección y subida de imagen
 import * as ImagePicker from "expo-image-picker";
-
-// Importación del cliente de Supabase
 import { supabase } from "../services/supabase";
-
-// Tipos para la navegación
 import { RootStackParamList } from "../../App";
 
-// Tipo para la navegación
 type RegisterScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "Register"
 >;
 
-// Función para validar formato de email (sin cambiarla, como pediste)
-const isValidEmail = (email: string) => {
-  const regex = /.+@.+/;
-  return regex.test(email);
-};
+const isValidEmail = (email: string) => /.+@.+/.test(email);
 
-// Componente de pantalla de registro
 export default function RegisterScreen() {
-  // Estados para los campos del formulario
+  const navigation = useNavigation<RegisterScreenNavigationProp>();
+
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -45,81 +34,70 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Estados para la imagen de perfil
-  const [imageUri, setImageUri] = useState<string | null>(null); // Vista previa local
-  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null); // URL en Supabase
+  // Imagen de perfil
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
 
-  // Hook de navegación
-  const navigation = useNavigation<RegisterScreenNavigationProp>();
-
-  // Seleccionar imagen de la galería
+  // ==================== SELECCIONAR Y SUBIR FOTO ====================
   const pickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        "Permiso requerido",
-        "Necesitamos acceso a tu galería para seleccionar una foto.",
-      );
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert("Permiso requerido", "Necesitamos acceso a tu galería.");
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect: [1, 1], // Cuadrado para avatar
+      aspect: [1, 1],
       quality: 0.8,
-      base64: true,
     });
 
-    if (!result.canceled && result.assets && result.assets[0].base64) {
-      setImageUri(result.assets[0].uri);
-      await uploadProfileImage(result.assets[0]);
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      setImageUri(asset.uri);
+      await uploadProfileImage(asset);
     }
   };
 
-  // Subir la imagen seleccionada a Supabase Storage
   const uploadProfileImage = async (asset: ImagePicker.ImagePickerAsset) => {
     try {
       setLoading(true);
 
-      const fileExt = asset.uri.split(".").pop() || "jpg";
+      const fileExt = asset.uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
-      // Convertir base64 a ArrayBuffer
-      const base64 = asset.base64!;
-      const arrayBuffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      // Convertir uri → Blob (más estable)
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(filePath, arrayBuffer, {
-          contentType: asset.mimeType || "image/jpeg",
+        .upload(filePath, blob, {
+          contentType: asset.mimeType || `image/${fileExt}`,
+          cacheControl: "3600",
           upsert: true,
         });
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      // Obtener URL pública (asumiendo bucket público)
       const { data: urlData } = supabase.storage
         .from("avatars")
         .getPublicUrl(filePath);
 
       setProfileImageUrl(urlData.publicUrl);
-      Alert.alert("Éxito", "Foto de perfil subida correctamente");
+      Alert.alert("¡Éxito!", "Foto de perfil subida correctamente");
     } catch (err: any) {
       console.error("Error al subir imagen:", err);
-      Alert.alert(
-        "Error al subir foto",
-        err.message || "No se pudo subir la imagen",
-      );
-      setImageUri(null); // Quitamos preview si falla
+      Alert.alert("Error", "No se pudo subir la foto. Inténtalo de nuevo.");
+      setImageUri(null);
     } finally {
       setLoading(false);
     }
   };
 
+  // ==================== REGISTRO ====================
   const handleRegister = async () => {
     setError("");
 
@@ -141,59 +119,34 @@ export default function RegisterScreen() {
     }
 
     setLoading(true);
-
     try {
-      // 1. Registro en Auth
-      const { data: signUpData, error: signUpError } =
-        await supabase.auth.signUp({
-          email,
-          password,
-        });
+      // 1. Crear usuario en Auth
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-      if (signUpError) {
-        setError(signUpError.message);
-        Alert.alert("Error de registro", signUpError.message);
-        return;
-      }
+      if (signUpError) throw signUpError;
+      if (!signUpData?.user) throw new Error("No se recibió el usuario");
 
-      if (!signUpData?.user) {
-        setError("No se recibió información del usuario");
-        Alert.alert("Error", "No se pudo obtener el ID del usuario");
-        return;
-      }
-
-      // 2. Insertar perfil (incluyendo la imagen si se subió)
+      // 2. Crear perfil
       const { error: profileError } = await supabase.from("profiles").insert({
         id: signUpData.user.id,
         username: username || email.split("@")[0],
-        profile_image: profileImageUrl || null, // ← aquí se guarda la URL
+        profile_image: profileImageUrl || null,
       });
 
-      if (profileError) {
-        console.error("Error al insertar perfil:", profileError);
-        setError(
-          "Perfil no creado: " + (profileError.message || "Error desconocido"),
-        );
-        Alert.alert(
-          "Problema al crear perfil",
-          "El usuario se creó, pero no se pudo crear el perfil.\n" +
-            "Error: " +
-            (profileError.message || "Desconocido") +
-            "\n\nPor favor intenta de nuevo o contacta soporte.",
-        );
-        return;
-      }
+      if (profileError) throw profileError;
 
-      // Éxito completo
       Alert.alert(
-        "Éxito",
-        "Usuario y perfil registrados correctamente. Revisa tu email para confirmar.",
+        "¡Registro exitoso!",
+        "Revisa tu correo para confirmar la cuenta."
       );
       navigation.navigate("Tours");
     } catch (err: any) {
-      console.error("Excepción en registro:", err);
-      setError("Ocurrió un error inesperado: " + (err.message || ""));
-      Alert.alert("Error inesperado", "Por favor intenta de nuevo.");
+      console.error("Error en registro:", err);
+      setError(err.message || "Ocurrió un error inesperado");
+      Alert.alert("Error", err.message || "No se pudo completar el registro");
     } finally {
       setLoading(false);
     }
@@ -201,77 +154,69 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Registro de Usuario</Text>
+      <View style={styles.card}>
+        <Text style={styles.title}>Registro de Usuario</Text>
 
-      {/* Área para foto de perfil */}
-      <TouchableOpacity
-        style={styles.avatarContainer}
-        onPress={pickImage}
-        disabled={loading}
-      >
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarText}>Añadir foto</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
-      <Text style={styles.hintText}>
-        Toca para seleccionar tu foto de perfil
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        editable={!loading}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Username"
-        value={username}
-        onChangeText={setUsername}
-        autoCapitalize="none"
-        editable={!loading}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Contraseña"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        editable={!loading}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Confirmar Contraseña"
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-        editable={!loading}
-      />
-
-      {error && <Text style={styles.errorText}>{error}</Text>}
-
-      {loading ? (
-        <ActivityIndicator
-          size="large"
-          color="#0066cc"
-          style={{ marginVertical: 20 }}
-        />
-      ) : (
-        <Button
-          title="Registrarse"
-          onPress={handleRegister}
+        {/* Foto de perfil */}
+        <TouchableOpacity
+          style={styles.avatarContainer}
+          onPress={pickImage}
           disabled={loading}
-          color="#0066cc"
+        >
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarText}>Añadir foto</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+        <Text style={styles.hintText}>Toca para seleccionar tu foto de perfil</Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          editable={!loading}
         />
-      )}
+        <TextInput
+          style={styles.input}
+          placeholder="Username"
+          value={username}
+          onChangeText={setUsername}
+          autoCapitalize="none"
+          editable={!loading}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Contraseña"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          editable={!loading}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Confirmar Contraseña"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry
+          editable={!loading}
+        />
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        {loading ? (
+          <ActivityIndicator size="large" color="#5CC2A3" style={{ marginVertical: 20 }} />
+        ) : (
+          <TouchableOpacity style={styles.registerButton} onPress={handleRegister}>
+            <Text style={styles.registerButtonText}>Registrarse</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -279,18 +224,15 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#F2F9F7",
     justifyContent: "center",
-    alignItems: "center",
     padding: 24,
-    backgroundColor: "#F2F9F7", // Un verde menta extremadamente claro (casi blanco)
   },
   card: {
-    width: "100%",
     backgroundColor: "#FFFFFF",
-    borderRadius: 35, // Bordes muy redondos y orgánicos
-    padding: 30,
+    borderRadius: 35,
+    padding: 32,
     alignItems: "center",
-    // Sombra suave para dar profundidad
     shadowColor: "#2D5A4C",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.08,
@@ -300,18 +242,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#2D5A4C", // Verde bosque profundo para el texto
+    color: "#2D5A4C",
     marginBottom: 20,
     letterSpacing: -0.5,
   },
   avatarContainer: {
-    marginBottom: 20,
-    // Efecto de anillo alrededor del avatar
     padding: 4,
     borderRadius: 70,
     borderWidth: 2,
-    borderColor: "#A3D9C9", // Verde menta pastel
+    borderColor: "#A3D9C9",
     borderStyle: "dashed",
+    marginBottom: 12,
   },
   avatar: {
     width: 120,
@@ -345,17 +286,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7FBF9",
     borderWidth: 1.5,
     borderColor: "#E0EDE9",
-    borderRadius: 20, // Inputs redondeados
+    borderRadius: 20,
     paddingHorizontal: 20,
     marginBottom: 16,
     fontSize: 16,
     color: "#2D5A4C",
   },
-  button: {
+  registerButton: {
     width: "100%",
     height: 56,
-    backgroundColor: "#5CC2A3", // Verde menta vibrante (Botón principal)
-    borderRadius: 28, // Botón tipo píldora
+    backgroundColor: "#5CC2A3",
+    borderRadius: 28,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 10,
@@ -365,15 +306,16 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-  buttonText: {
+  registerButtonText: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "700",
   },
   errorText: {
-    color: "#E67E7E", // Rojo pastel
+    color: "#FF7675",
     fontSize: 14,
     marginBottom: 16,
-    fontWeight: "500",
+    fontWeight: "600",
+    textAlign: "center",
   },
 });
