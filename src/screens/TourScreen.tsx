@@ -36,19 +36,15 @@ export default function ToursScreen({ navigation }: Props) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const drawerNavigation = useNavigation<any>(); // Para abrir el drawer desde el botón flotante
+  const drawerNavigation = useNavigation<any>();
 
   useFocusEffect(
     useCallback(() => {
       const init = async () => {
-        // Obtener usuario actual
         const { data: { user } } = await supabase.auth.getUser();
         setCurrentUserId(user?.id ?? null);
-
-        // Cargar tours
         await fetchTours();
       };
-
       init();
     }, [])
   );
@@ -68,12 +64,44 @@ export default function ToursScreen({ navigation }: Props) {
     setLoading(false);
   }
 
+  // ────────────────────────────────────────────────
+  // FUNCIÓN PARA ELIMINAR TOUR (nueva)
+  // ────────────────────────────────────────────────
+  const deleteTour = (tourId: string, tourTitle: string) => {
+    Alert.alert(
+      "Eliminar Tour",
+      `¿Estás seguro de que deseas eliminar "${tourTitle}"?\nEsta acción no se puede deshacer.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from("tours")
+                .delete()
+                .eq("id", tourId);
+
+              if (error) throw error;
+
+              Alert.alert("Éxito", "El tour ha sido eliminado correctamente.");
+              fetchTours(); // Refrescar la lista inmediatamente
+            } catch (err: any) {
+              console.error("Error al eliminar tour:", err);
+              Alert.alert("Error", err.message || "No se pudo eliminar el tour. Intenta de nuevo.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
       Alert.alert("Error al cerrar sesión", error.message);
     } else {
-      // Resetear navegación para limpiar el stack
       navigation.reset({
         index: 0,
         routes: [{ name: "Login" }],
@@ -122,20 +150,24 @@ export default function ToursScreen({ navigation }: Props) {
             <View style={styles.ownerActionsRow}>
               <TouchableOpacity
                 style={styles.addStopBtn}
-                onPress={() =>
-                  navigation.navigate("EditStops", { tourId: item.id })
-                }
+                onPress={() => navigation.navigate("EditStops", { tourId: item.id })}
               >
-                <Text style={styles.addStopBtnText}>Gestionar Paradas</Text>
+                <Text style={styles.addStopBtnText}>+ Parada</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.editBtn}
-                onPress={() =>
-                  navigation.navigate("TourForm", { tourId: item.id })
-                }
+                onPress={() => navigation.navigate("TourForm", { tourId: item.id })}
               >
                 <Text style={styles.editBtnText}>Editar</Text>
+              </TouchableOpacity>
+
+              {/* NUEVO BOTÓN DE ELIMINAR */}
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => deleteTour(item.id, item.title)}
+              >
+                <Text style={styles.deleteBtnText}>Eliminar</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -166,7 +198,10 @@ export default function ToursScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate("Tours")}>
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={() => navigation.navigate("TourForm")}
+        >
           <Text style={styles.buttonText}>+ Nuevo Tour</Text>
         </TouchableOpacity>
       </View>
@@ -186,7 +221,6 @@ export default function ToursScreen({ navigation }: Props) {
         />
       )}
 
-      {/* Botón flotante de chat */}
       <TouchableOpacity style={styles.chatButton} onPress={openChatDrawer}>
         <Text style={styles.chatButtonText}>💬</Text>
       </TouchableOpacity>
@@ -319,31 +353,55 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#F0F9F6",
+    gap: 8,
   },
   addStopBtn: {
     flex: 1,
     backgroundColor: "#F2F9F7",
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 14,          // ↑ more vertical padding
+    paddingHorizontal: 12,
+    borderRadius: 14,
     alignItems: "center",
-    marginRight: 8,
+    justifyContent: "center",     // ← ensures vertical centering
+    minHeight: 52,                // better touch target
   },
   addStopBtnText: {
     color: "#5CC2A3",
     fontWeight: "700",
     fontSize: 15,
+    textAlign: "center",          // ← explicit centering (good practice)
   },
   editBtn: {
+    flex: 1,
     backgroundColor: "#FFF9F2",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
   },
   editBtnText: {
     color: "#E67E22",
     fontWeight: "700",
     fontSize: 15,
+    textAlign: "center",
+  },
+  deleteBtn: {
+    flex: 1,
+    backgroundColor: "#FFF0F0",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  deleteBtnText: {
+    color: "#FF7675",
+    fontWeight: "700",
+    fontSize: 15,
+    textAlign: "center",
   },
   chatButton: {
     position: "absolute",

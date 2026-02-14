@@ -66,14 +66,14 @@ export default function RegisterScreen() {
 
       const fileExt = asset.uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const filePath = `avatard/${fileName}`;
 
       // Convertir uri → Blob (más estable)
       const response = await fetch(asset.uri);
       const blob = await response.blob();
 
       const { error: uploadError } = await supabase.storage
-        .from("avatars")
+        .from("avatard")
         .upload(filePath, blob, {
           contentType: asset.mimeType || `image/${fileExt}`,
           cacheControl: "3600",
@@ -83,7 +83,7 @@ export default function RegisterScreen() {
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage
-        .from("avatars")
+        .from("avatard")
         .getPublicUrl(filePath);
 
       setProfileImageUrl(urlData.publicUrl);

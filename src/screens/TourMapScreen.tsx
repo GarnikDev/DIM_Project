@@ -15,6 +15,7 @@ import * as Speech from "expo-speech";
 import { supabase } from "../services/supabase";
 import { RouteProp } from "@react-navigation/native";
 import { RootStackParamList } from "../../App";
+import { generateAndShareTourPDF } from '../utils/PdfUtils';
 
 type Stop = {
   id: string;
@@ -95,50 +96,67 @@ export default function TourMapScreen({ route }: TourMapProps) {
     setLoading(false);
   }, [tourId]);
 
-  const playFrom = useCallback((array: string[], index: number) => {
-    if (index >= array.length || isPausedRef.current) {
-      if (index >= array.length) setIsSpeaking(false);
-      return;
-    }
+const playFrom = useCallback((array: string[], index: number) => {
+  if (index >= array.length || isPausedRef.current) {
+    if (index >= array.length) setIsSpeaking(false);
+    return;
+  }
 
-    setCurrentIdx(index);
-    currentIdxRef.current = index;
+  setCurrentIdx(index);
+  currentIdxRef.current = index;
 
-    Speech.speak(array[index], {
-      language: "es-ES",
-      pitch: 1.0,
-      rate: 0.92,
-      onDone: () => {
-        if (!isPausedRef.current) playFrom(array, index + 1);
-      },
-      onError: () => {
-        Alert.alert("Error", "Problema al reproducir el audio");
+  Speech.speak(array[index].trim(), {           // trim() avoids empty chunks
+    language: "es-ES",
+    pitch: 1.0,                                 // default = natural
+    rate: 0.9,                                  // slightly slower = clearer
+    onDone: () => {
+      if (!isPausedRef.current) {
+        playFrom(array, index + 1);
+      }
+    },
+    onError: (err) => {
+      console.log("Speech error:", err);
+      Alert.alert("Error de voz", "No se pudo reproducir. Verifica volumen o modo silencio.");
+      setIsSpeaking(false);
+    },
+  });
+}, []);
+
+// In handleSelectStop:
+const handleSelectStop = (stop: Stop) => {
+  Speech.stop();
+  setSelectedStop(stop);
+
+  const fullText = stop.description?.trim() || "Sin descripción disponible.";
+  const chunks = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+
+  // Clean chunks
+  const cleanChunks = chunks.map(c => c.trim()).filter(c => c.length > 0);
+
+  setSentences(cleanChunks);
+  setCurrentIdx(0);
+  currentIdxRef.current = 0;
+  setIsSpeaking(true);
+  setIsPaused(false);
+  isPausedRef.current = false;
+
+  // Speak title + first chunk immediately
+  const initialText = `${stop.title}. ${cleanChunks[0] || ""}`;
+  Speech.speak(initialText, {
+    language: "es-ES",
+    onDone: () => {
+      if (cleanChunks.length > 1 && !isPausedRef.current) {
+        playFrom(cleanChunks.slice(1), 1); // start from second chunk
+      } else {
         setIsSpeaking(false);
-      },
-    });
-  }, []);
-
-  const handleSelectStop = (stop: Stop) => {
-    Speech.stop();
-    setSelectedStop(stop);
-
-    const fullText = stop.description?.trim() || "Sin descripción disponible.";
-    const chunks = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
-
-    setSentences(chunks);
-    setCurrentIdx(0);
-    currentIdxRef.current = 0;
-    setIsSpeaking(true);
-    setIsPaused(false);
-    isPausedRef.current = false;
-
-    // Leer título primero + descripción
-    Speech.speak(`${stop.title}. `, {
-      language: "es-ES",
-      onDone: () => playFrom(chunks, 0),
-    });
-  };
-
+      }
+    },
+    onError: (err) => {
+      console.log(err);
+      Alert.alert("Error", "No se pudo reproducir el audio. Verifica ajustes de voz.");
+    },
+  });
+};
   const togglePlayback = () => {
     if (isPaused) {
       setIsPaused(false);
@@ -188,6 +206,16 @@ export default function TourMapScreen({ route }: TourMapProps) {
       <StatusBar barStyle="dark-content" />
 
       <Text style={styles.title}>{tourTitle || "Tour Map"}</Text>
+
+      <TouchableOpacity
+        style={styles.pdfButton}
+        onPress={() => generateAndShareTourPDF(tourTitle, stops)}
+        disabled={loading || stops.length === 0}
+      >
+        <Text style={styles.pdfButtonText}>
+          Generar Informe PDF
+        </Text>
+      </TouchableOpacity>
 
       <MapView
         ref={mapRef}
@@ -374,6 +402,26 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
     letterSpacing: 0.8,
+  },
+  pdfButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    backgroundColor: '#2D5A4C',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    zIndex: 10,
+  },
+  pdfButtonText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 15,
   },
   controlIcon: {
     fontSize: 28,
