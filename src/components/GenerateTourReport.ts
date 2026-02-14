@@ -4,7 +4,8 @@ export const generateTourReportHTML = (
     title: string;
     description?: string;
     stop_order: number;
-  }>
+  }>,
+  coverImageUrl?: string
 ): string => {
   let html = `
 <!DOCTYPE html>
@@ -34,6 +35,14 @@ export const generateTourReportHTML = (
       text-align: center;
       margin-bottom: 40px;
     }
+    .cover-image {
+      width: 100%;
+      max-height: 300px;
+      object-fit: cover;
+      border-radius: 12px;
+      margin: 20px 0 30px 0;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    }
     h1 {
       color: #2D5A4C;
       font-size: 32px;
@@ -51,10 +60,7 @@ export const generateTourReportHTML = (
       margin: 40px 0 20px 0;
       font-size: 24px;
     }
-    .stop-list {
-      margin: 0;
-      padding: 0;
-    }
+    .stop-list { margin: 0; padding: 0; }
     .stop-item {
       margin: 24px 0;
       padding: 20px;
@@ -104,6 +110,7 @@ export const generateTourReportHTML = (
     <div class="header">
       <h1>${tourTitle}</h1>
       <p class="subtitle">Informe de paradas del tour</p>
+      ${coverImageUrl ? `<img src="${coverImageUrl}" class="cover-image" alt="Portada del tour">` : ''}
     </div>
 
     <h2>Paradas registradas (${stops.length})</h2>
@@ -137,8 +144,7 @@ export const generateTourReportHTML = (
     </div>
   </div>
 </body>
-</html>
-  `;
+</html>`;
 
   return html;
 };

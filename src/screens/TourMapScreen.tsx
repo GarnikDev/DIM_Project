@@ -15,7 +15,7 @@ import * as Speech from "expo-speech";
 import { supabase } from "../services/supabase";
 import { RouteProp } from "@react-navigation/native";
 import { RootStackParamList } from "../../App";
-import { generateAndShareTourPDF } from '../utils/PdfUtils';
+import { generateAndShareTourPDF } from "../utils/PdfUtils";  // Ajusta la ruta si es necesario
 
 type Stop = {
   id: string;
@@ -35,6 +35,7 @@ export default function TourMapScreen({ route }: TourMapProps) {
   const mapRef = useRef<MapView>(null);
 
   const [stops, setStops] = useState<Stop[]>([]);
+  const [tourCoverImage, setTourCoverImage] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
@@ -48,6 +49,7 @@ export default function TourMapScreen({ route }: TourMapProps) {
 
   useEffect(() => {
     fetchStops();
+    fetchTourCover();
     return () => {
       Speech.stop();
     };
@@ -79,7 +81,6 @@ export default function TourMapScreen({ route }: TourMapProps) {
 
       setStops(parsed);
 
-      // Ajuste automático del mapa
       if (parsed.length > 0 && mapRef.current) {
         const coords = parsed.map(s => ({
           latitude: s.latitude,
@@ -96,67 +97,81 @@ export default function TourMapScreen({ route }: TourMapProps) {
     setLoading(false);
   }, [tourId]);
 
-const playFrom = useCallback((array: string[], index: number) => {
-  if (index >= array.length || isPausedRef.current) {
-    if (index >= array.length) setIsSpeaking(false);
-    return;
-  }
+  // Nuevo: Obtener la imagen de portada del tour
+  const fetchTourCover = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("tours")
+      .select("cover_image")
+      .eq("id", tourId)
+      .single();
 
-  setCurrentIdx(index);
-  currentIdxRef.current = index;
+    if (error) {
+      console.log("Error fetching tour cover:", error);
+      return;
+    }
 
-  Speech.speak(array[index].trim(), {           // trim() avoids empty chunks
-    language: "es-ES",
-    pitch: 1.0,                                 // default = natural
-    rate: 0.9,                                  // slightly slower = clearer
-    onDone: () => {
-      if (!isPausedRef.current) {
-        playFrom(array, index + 1);
-      }
-    },
-    onError: (err) => {
-      console.log("Speech error:", err);
-      Alert.alert("Error de voz", "No se pudo reproducir. Verifica volumen o modo silencio.");
-      setIsSpeaking(false);
-    },
-  });
-}, []);
+    if (data?.cover_image) {
+      setTourCoverImage(data.cover_image);
+    }
+  }, [tourId]);
 
-// In handleSelectStop:
-const handleSelectStop = (stop: Stop) => {
-  Speech.stop();
-  setSelectedStop(stop);
+  const playFrom = useCallback((array: string[], index: number) => {
+    if (index >= array.length || isPausedRef.current) {
+      if (index >= array.length) setIsSpeaking(false);
+      return;
+    }
 
-  const fullText = stop.description?.trim() || "Sin descripción disponible.";
-  const chunks = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+    setCurrentIdx(index);
+    currentIdxRef.current = index;
 
-  // Clean chunks
-  const cleanChunks = chunks.map(c => c.trim()).filter(c => c.length > 0);
-
-  setSentences(cleanChunks);
-  setCurrentIdx(0);
-  currentIdxRef.current = 0;
-  setIsSpeaking(true);
-  setIsPaused(false);
-  isPausedRef.current = false;
-
-  // Speak title + first chunk immediately
-  const initialText = `${stop.title}. ${cleanChunks[0] || ""}`;
-  Speech.speak(initialText, {
-    language: "es-ES",
-    onDone: () => {
-      if (cleanChunks.length > 1 && !isPausedRef.current) {
-        playFrom(cleanChunks.slice(1), 1); // start from second chunk
-      } else {
+    Speech.speak(array[index].trim(), {
+      language: "es-ES",
+      pitch: 1.0,
+      rate: 0.9,
+      onDone: () => {
+        if (!isPausedRef.current) playFrom(array, index + 1);
+      },
+      onError: (err) => {
+        console.log("Speech error:", err);
+        Alert.alert("Error de voz", "No se pudo reproducir. Verifica volumen o modo silencio.");
         setIsSpeaking(false);
-      }
-    },
-    onError: (err) => {
-      console.log(err);
-      Alert.alert("Error", "No se pudo reproducir el audio. Verifica ajustes de voz.");
-    },
-  });
-};
+      },
+    });
+  }, []);
+
+  const handleSelectStop = (stop: Stop) => {
+    Speech.stop();
+    setSelectedStop(stop);
+
+    const fullText = stop.description?.trim() || "Sin descripción disponible.";
+    const chunks = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+
+    const cleanChunks = chunks.map(c => c.trim()).filter(c => c.length > 0);
+
+    setSentences(cleanChunks);
+    setCurrentIdx(0);
+    currentIdxRef.current = 0;
+    setIsSpeaking(true);
+    setIsPaused(false);
+    isPausedRef.current = false;
+
+    const initialText = `${stop.title}. ${cleanChunks[0] || ""}`;
+    Speech.speak(initialText, {
+      language: "es-ES",
+      onDone: () => {
+        if (cleanChunks.length > 1 && !isPausedRef.current) {
+          playFrom(cleanChunks.slice(1), 1);
+        } else {
+          setIsSpeaking(false);
+        }
+      },
+      onError: (err) => {
+        console.log(err);
+        Alert.alert("Error", "No se pudo reproducir el audio. Verifica ajustes de voz.");
+      },
+    });
+  };
+
   const togglePlayback = () => {
     if (isPaused) {
       setIsPaused(false);
@@ -207,14 +222,13 @@ const handleSelectStop = (stop: Stop) => {
 
       <Text style={styles.title}>{tourTitle || "Tour Map"}</Text>
 
+      {/* Botón PDF - ahora pasa la cover_image */}
       <TouchableOpacity
         style={styles.pdfButton}
-        onPress={() => generateAndShareTourPDF(tourTitle, stops)}
+        onPress={() => generateAndShareTourPDF(tourTitle, stops, tourCoverImage)}
         disabled={loading || stops.length === 0}
       >
-        <Text style={styles.pdfButtonText}>
-          Generar Informe PDF
-        </Text>
+        <Text style={styles.pdfButtonText}>Generar Informe PDF</Text>
       </TouchableOpacity>
 
       <MapView
@@ -306,6 +320,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 6,
   },
+
+  // Botón PDF
+  pdfButton: {
+    position: "absolute",
+    top: 60,
+    right: 20,
+    backgroundColor: "#2D5A4C",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    zIndex: 10,
+  },
+  pdfButtonText: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+
   map: { flex: 1 },
   loadingContainer: {
     flex: 1,
@@ -402,26 +439,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
     letterSpacing: 0.8,
-  },
-  pdfButton: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    backgroundColor: '#2D5A4C',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    zIndex: 10,
-  },
-  pdfButtonText: {
-    color: 'white',
-    fontWeight: '700',
-    fontSize: 15,
   },
   controlIcon: {
     fontSize: 28,

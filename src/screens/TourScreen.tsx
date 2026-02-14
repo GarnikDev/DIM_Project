@@ -65,7 +65,7 @@ export default function ToursScreen({ navigation }: Props) {
   }
 
   // ────────────────────────────────────────────────
-  // FUNCIÓN PARA ELIMINAR TOUR (nueva)
+  // FUNCIÓN PARA ELIMINAR TOUR
   // ────────────────────────────────────────────────
   const deleteTour = (tourId: string, tourTitle: string) => {
     Alert.alert(
@@ -86,7 +86,7 @@ export default function ToursScreen({ navigation }: Props) {
               if (error) throw error;
 
               Alert.alert("Éxito", "El tour ha sido eliminado correctamente.");
-              fetchTours(); // Refrescar la lista inmediatamente
+              fetchTours(); // Refresca la lista
             } catch (err: any) {
               console.error("Error al eliminar tour:", err);
               Alert.alert("Error", err.message || "No se pudo eliminar el tour. Intenta de nuevo.");
@@ -162,7 +162,7 @@ export default function ToursScreen({ navigation }: Props) {
                 <Text style={styles.editBtnText}>Editar</Text>
               </TouchableOpacity>
 
-              {/* NUEVO BOTÓN DE ELIMINAR */}
+              {/* NUEVO BOTÓN ELIMINAR */}
               <TouchableOpacity
                 style={styles.deleteBtn}
                 onPress={() => deleteTour(item.id, item.title)}
@@ -353,24 +353,28 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#F0F9F6",
-    gap: 8,
+    gap: 8, // ← espacio entre botones
   },
+  // ────────────────────────────────────────────────
+  // Botones mejorados: centrados, con padding uniforme
+  // ────────────────────────────────────────────────
   addStopBtn: {
     flex: 1,
     backgroundColor: "#F2F9F7",
-    paddingVertical: 14,          // ↑ more vertical padding
+    paddingVertical: 14,
     paddingHorizontal: 12,
     borderRadius: 14,
     alignItems: "center",
-    justifyContent: "center",     // ← ensures vertical centering
-    minHeight: 52,                // better touch target
+    justifyContent: "center",
+    minHeight: 52,
   },
   addStopBtnText: {
     color: "#5CC2A3",
     fontWeight: "700",
     fontSize: 15,
-    textAlign: "center",          // ← explicit centering (good practice)
+    textAlign: "center",
   },
+
   editBtn: {
     flex: 1,
     backgroundColor: "#FFF9F2",
@@ -387,6 +391,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
+
   deleteBtn: {
     flex: 1,
     backgroundColor: "#FFF0F0",
@@ -403,6 +408,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
+
   chatButton: {
     position: "absolute",
     bottom: 24,
